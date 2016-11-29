@@ -1,13 +1,14 @@
 import ctypes
 import ctypes.util
 import os
+import struct
 from enum import IntEnum
 from io import BytesIO
 
 from . import *
 from .utils import BinaryReader, load_lib
 from .vorbis_headers import lookup as vorbis_header_lookup
-
+from mhashlib import crc32b
 
 vorbis = load_lib('vorbis')
 vorbisenc = load_lib('vorbisenc', 'vorbis')
@@ -298,7 +299,8 @@ def rebuild(sample):
 		quality, channels, rate = vorbis_header_lookup[crc32]
 	except KeyError as e:
 		raise ValueError('Could not find header info for crc32=%d' % crc32) from e
-	blocksize_short, blocksize_long, setup_packet_buff = get_header_info(quality, channels, rate)
+	blocksize_short, blocksize_long, setup_packet_buff, crc = get_header_info(quality, channels, rate)
+	print(crc32, crc)
 
 	info = VorbisInfo()
 	comment = VorbisComment()
@@ -437,6 +439,8 @@ def get_header_info(quality, channels, rate):
 	vorbis.vorbis_analysis_init(state, info)
 
 	vorbis.vorbis_analysis_headerout(state, comment, id_header, comment_header, setup_header)
+	shb = setup_header.packet[:setup_header.bytes]
+	crc = struct.unpack('<I', crc32b(shb).digest())
 
 	blocksize_short   = vorbis.vorbis_info_blocksize(info, 0)
 	blocksize_long    = vorbis.vorbis_info_blocksize(info, 1)
@@ -444,4 +448,4 @@ def get_header_info(quality, channels, rate):
 
 	vorbis.vorbis_dsp_clear(state)
 
-	return blocksize_short, blocksize_long, setup_packet_buff
+	return blocksize_short, blocksize_long, setup_packet_buff, crc
